@@ -1,0 +1,82 @@
+#alias comita="git checkout master && gplbm && gmd"
+function comit {
+  local _branch=$(git branch | grep "*")
+  local branch=${_branch:2}
+  echo "------------------------------------------------at branch ${branch}"
+  if [ "$branch" != "develop" ]; then
+    echo -e "\n------------------------------------------------você está no branch errado..$branch"
+  else
+    echo -e "\n---------------------------------------------adicionando..."
+    git add .
+    echo -e "\n---------------------------------------------comitando..."
+    git commit -am "${1}"
+    echo -e "\n---------------------------------------------transitando para o master"
+    git checkout master
+    local remote=$(git remote | { head -n1;})
+    echo -e "\n---------------------------------------------pegando do repositorio...$remote"
+    git pull "${remote}" master
+    echo -e "\n---------------------------------------------mergindo..."
+    git merge "${branch}" | grep 'CONFLI' #&> /dev/null
+    if [ $? == 0 ]; then
+      echo -e "\n---------------------------------------------conflito..."
+      echo $?
+    else
+      echo -e "\n---------------------------------------------finalizando..."
+      git push "${remote}" master
+      echo -e "\n---------------------------------------------voltando para o ${branch}"
+      git checkout "${branch}"
+      merge_master_and_run
+
+    fi
+  fi
+}
+
+function sgi {
+  cd ~/projetos/sgi
+  update
+}
+
+function update {
+  local status=$(git status -s)
+  echo $status
+  if [ "$status" == "" ]; then
+    local _branch=$(parse_git_branch)
+    local branch=${_branch:1:${#_branch}-2}
+    echo -e "\n---------------------------------------------transitando para o master.."
+    git checkout master
+    local remote=$(git remote | { head -n1;})
+    echo -e "\n---------------------------------------------pegando do repositorio...$remote"
+    git pull "${remote}" master
+    echo -e "\n---------------------------------------------${branch}"
+    if [ "$branch" != "master" ]; then
+      echo -e "\n---------------------------------------------voltando para o ${branch}..."
+      git checkout $branch
+      merge_master_and_run
+    else
+      echo -e "\n---------------------------------------------retorne manualmente para o seu branch de trabalho..."
+    fi
+  else
+    echo -e "\n---------------------------------------------voce tem alterações no seu branch..."
+  fi
+}
+
+function merge_master_and_run {
+  echo "---------------------------------------------mergindo com o master"
+  local gemfile_size=$(stat -c %s Gemfile)
+  local schema_size=$(stat -c %s db/schema.rb)
+  local seed_size=$(stat -c %s db/seeds.rb)
+  git merge master
+  local new_gemfile_size=$(stat -c %s Gemfile)
+  local new_schema_size=$(stat -c %s db/schema.rb)
+  local new_seed_size=$(stat -c %s db/seeds.rb)
+  if [ "$gemfile_size" != "$new_gemfile_size" ]; then
+    echo -e "\n---------------------------------------------bundle..."
+    bundle
+  fi
+  if [ "$schema_size" != "$new_schema_size" ] || [ "$seed_size" != "$new_seed_size" ] ; then
+    echo -e "\n---------------------------------------------thor base..."
+    thor base
+  else
+    rails s | grep '' &> /dev/null
+  fi
+}
